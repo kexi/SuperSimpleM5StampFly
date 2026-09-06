@@ -14,6 +14,20 @@ M5Stack社が発売した StampFly と AtomJoyStick のファームウェアを�
 
 - [ ] アホほどある
 
+## 進捗
+
+「はじめの N 歩」として一歩ずつ足していく。全体の設計は
+[knowledge/position-hold-design.md](knowledge/position-hold-design.md) を参照。
+
+|歩|内容|状態|
+|----|----|----|
+|〜二十一|BLEでジョイスティックを受けてモーターを回す|実機で動作確認済み|
+|二十二|PMW3901の製品ID読み出し|実機未確認|
+|二十三|SPIバスの共有化、BMI270のチップID読み出し|実機未確認|
+|二十四|BMI270の設定書き込みと加速度・角速度、400Hz化|実機未確認|
+
+この先は姿勢推定 → 安全装置 → 姿勢制御 → 高度ホールド → ポジションホールド。
+
 ## 開発環境
 
 Nix + direnv で環境を用意している。`direnv allow` すると必要なツールが揃う。
@@ -24,16 +38,47 @@ just install-hooks    # 初回のみ(git hooksの導入)
 just --list           # 使えるコマンド一覧
 just build            # StampFlyのビルド
 just flash-monitor    # 書き込んでシリアルモニタを開く
+just test-sils        # 実機なしでドライバを検証する
 ```
+
+### 書き込み前の注意
+
+**StampFly も Stack-chan(CoreS3) も同じ ESP32-S3 で、`pio device list` の
+VID:PID は両方 `303A:1001`。この出力からは区別できない。**
+書き込み先の MAC アドレス(`SER=`)を必ず確認すること。
+過去に取り違えて別デバイスを上書きした事故がある
+（[詳細](knowledge/flashing-device-identification.md)）。
+
+### 実機なしでの検証
+
+[StampFly Ecosystem](https://github.com/M5Fly-kanazawa/stampfly_ecosystem) の
+SILS にセンサーのチップモデルがあり、`just test-sils` でドライバの初期化
+シーケンスをホスト上で検証できる（[詳細](knowledge/sils-emulator.md)）。
+
+```sh
+ghq get https://github.com/M5Fly-kanazawa/stampfly_ecosystem
+just test-sils
+```
+
+## ナレッジ
+
+調査・計測で得た知見は [knowledge/](knowledge/index.md) に
+[OKF v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format) で残している。
+**効かなかったことや、誤りと判明した結論も消さずに残す。**
 
 ## 参考にした実装
 
-- PMW3901 の性能設定レジスタ列: [Bitcraze_PMW3901](https://github.com/bitcraze/Bitcraze_PMW3901) (MIT License, Copyright (c) 2017 Bitcraze AB)
+いずれも MIT License。出典を明記した上で利用している。
+
+- [StampFly Ecosystem](https://github.com/M5Fly-kanazawa/stampfly_ecosystem) (Copyright (c) 2026 Kouhei Ito)
+  - PMW3901 の初期化手順（PixArt 公式実装ガイド）
+  - BMI270 の設定ファイル(8192バイト、Bosch 配布)
+  - SILS のセンサーチップモデル（ドライバ検証用）
 
 ## StampFly のSPI結線
 
 IMU(BMI270)とオプティカルフローセンサ(PMW3901)は同じSPIバスを共有し、CSピンで区別する。
-値は[公式回路図](https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1069/Stamp_Fly_v1.0.pdf)で確認したもの。
+そのため片方と通信する前に、もう片方のCSをHIGH(非選択)にしておく必要がある。
 
 |信号|GPIO|
 |----|----|
@@ -43,6 +88,11 @@ IMU(BMI270)とオプティカルフローセンサ(PMW3901)は同じSPIバスを
 |CS (BMI270)|46|
 |CS2 (PMW3901)|12|
 
+CS2 = G12 は [公式回路図](https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1069/Stamp_Fly_v1.0.pdf)・
+公式ファームウェア・StampFly Ecosystem の3つで裏付けを取った
+（Web上の記載はG46とG12で食い違っていた）。詳細は
+[knowledge/stampfly-spi-pinout.md](knowledge/stampfly-spi-pinout.md)。
+
 
 ## 参考資料
 
@@ -51,6 +101,14 @@ IMU(BMI270)とオプティカルフローセンサ(PMW3901)は同じSPIバスを
 ### M5 Stamp Fly関連
 
 - オリジナルファームウェア https://github.com/m5stack/M5StampFly
+  （**PMW3901 は未実装**。SPIで読んでいるのはBMI270のみ）
+- 教育・研究プラットフォーム https://github.com/M5Fly-kanazawa/stampfly_ecosystem
+  （オリジナルファームウェア作者による。PMW3901の実装・ESKF・シミュレータ・SILS）
+
+下表は v1.0 の仕様。手元の実機は **v1.1**（メインモジュールが Stamp-S3A に変更）で、
+GPIO配置は同一だがバッテリが320mAh、重量が27.6gになっている。
+**v1.1の製品特徴リストからは PMW3901 の記載が消えているが、ピンマップと回路図リンクには
+残っている**（公式ドキュメント内で矛盾。実機で確認が必要）。
 
 |仕様|概要|
 |----|----|

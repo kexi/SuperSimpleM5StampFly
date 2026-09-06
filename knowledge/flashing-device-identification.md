@@ -4,9 +4,10 @@ title: 書き込み前に必ず対象デバイスを同定する
 description: ESP32-S3 は StampFly も CoreS3(Stack-chan) も同じ VID:PID を返すため、pio device list だけでは区別できない。同定せずに書き込んで別デバイスを上書きした事故の記録。
 tags: [stampfly, pitfall, hardware]
 status: stable
-generated: { by: claude-opus-5/1m, at: 2026-09-06T02:45:00Z }
+generated: { by: claude-opus-5/1m, at: 2026-09-06T06:50:00Z }
 verified:
   - { by: claude-opus-5/1m, at: 2026-09-06T02:45:00Z }
+  - { by: human:kexi, at: 2026-09-06T06:50:00Z }
 sources:
   - id: incident-20260906
     resource: 本リポジトリでの作業（2026-09-06、macOS 26 / aarch64-darwin）
@@ -56,9 +57,11 @@ ESP32-S3 が 1 台だけ見えたので StampFly だと判断した。**間違�
 | MAC | デバイス |
 |---|---|
 | `44:1B:F6:DF:59:68` | Stack-chan (CoreS3) |
-| （未登録） | StampFly |
+| `48:CA:43:B6:59:C0` | **StampFly (v1.1)** |
 
-StampFly を接続したら MAC を確認してここに追記する。
+**2 台とも `VID:PID=303A:1001` / `Description: USB JTAG/serial debug unit` で、
+MAC 以外に区別する手がかりは無い。** 同時に挿すと `pio device list` の
+並び順も固定ではないので、ポート名（`/dev/cu.usbmodem*`）を覚えても当てにならない。
 
 # なぜ「1 台しか見えないから、それだ」が誤りか
 
