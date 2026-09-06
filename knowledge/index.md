@@ -26,6 +26,8 @@ okf_version: "0.2"
 
 ## 実機作業
 
+* [実機で飛ばす前の検証手順](preflight-checklist.md) - プロペラを付ける前に机上で確かめること、テザーでの初飛行、ゲインの詰め方。実機未検証のコードを安全に立ち上げるための順序。
+
 * [書き込み前に必ず対象デバイスを同定する](flashing-device-identification.md) - ESP32-S3 は StampFly も CoreS3(Stack-chan) も同じ VID:PID を返すため、pio device list だけでは区別できない。同定せずに書き込んで別デバイスを上書きした事故の記録。
 
 ## ビルド・開発環境

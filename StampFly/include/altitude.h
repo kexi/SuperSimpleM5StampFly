@@ -254,6 +254,11 @@ void Altitude_reset() {
     _alt_velocity = 0.0f;
     _alt_throttle = 0.0f;
     Pid_reset(&_alt_pid);
+
+    // ToFの追従状態も戻す。
+    // 戻さないと「まだ本物のToFが来ていない」のに鮮度が生きているように
+    // 見え、推定が確定する前に高度制御が走ってしまう。
+    _alt_last_tof_us = 0;
 }
 
 // 目標高度[m]を設定する
@@ -306,12 +311,17 @@ static void _Altitude_correctWithTof() {
 
     const float distance_m = Tof_getDistance();
 
-    // ドライバが値を更新した周期だけ補正する。
-    const bool is_new_sample = (distance_m != _alt_prev_tof_distance);
+    // ドライバが新しい測距を読めた周期だけ補正する。
+    //
+    // Why not 「前回と値が変わったか」で見る: 静止していれば同じ距離が
+    //   正しく2回来る。ToFの量子化は1mmで、ホバリングが安定しているほど
+    //   同じ値が連続する。値の比較だと「新しいが同じ値」を古い値と誤認し、
+    //   **うまく飛べているときほど鮮度が切れて高度ホールドが降格する**という
+    //   逆の依存になる。ドライバが持つフラグを使う。
+    const bool is_new_sample = Tof_hasNewData();
     if (!is_new_sample) {
         return;
     }
-    _alt_prev_tof_distance = distance_m;
 
     // レンジ判定はドライバ(TOF_DISTANCE_MIN / MAX)が済ませているので
     // ここでは繰り返さない。NaN だけは通ってしまうと推定が全て NaN に
@@ -436,22 +446,17 @@ void Altitude_update(float dt) {
     // 「積分していたことにする」より、その周期を捨てる。
     const bool is_dt_usable = (dt > 0.0f) && (dt <= PID_DT_MAX);
 
-    const bool can_predict = is_dt_usable && is_accel_finite;
-    if (can_predict) {
-        // 速度を先に進めてから高度に足す(半陰的オイラー)。
-        //
-        // Why not 高度を先に進める(陽的オイラー): 陽的だと1周期ぶん
-        //   古い速度で高度を進めることになり、上下に揺れる入力で
-        //   積分が発散する側に誤差が溜まる。半陰的なら誤差が振動して
-        //   打ち消し合う。コストは行の順番だけ。
-        _alt_velocity += a_up * dt;
-        _alt_height += _alt_velocity * dt;
-    }
-
-    // --- 補正: ToFが新しい値を持っていれば取り込む ------------------
+    // --- ToFの補正 ------------------------------------------------
+    // 鮮度判定より先に呼ぶ。この中で _alt_last_tof_us が更新されるので、
+    // 順序が逆だと常に1周期古い鮮度で判断することになる。
     _Altitude_correctWithTof();
 
     // --- ToFの鮮度判定 --------------------------------------------
+    //
+    // Why 予測より先に判定するか: 予測(積分)は「補正が入る見込みがある」
+    //   ときだけ意味を持つ。順序が逆だと前周期の状態で判断することになり、
+    //   起動直後(まだToFが一度も来ていない)に予測が始まらない、あるいは
+    //   失陥した周期に1回だけ余分に積分する、という食い違いが出る。
     //
     // Why not dt を積算して判定する: 制御ループが詰まって周期が崩れると
     //   dt の積算は「時間が進んでいない」ように見える。絶対時刻の差なら
@@ -466,6 +471,29 @@ void Altitude_update(float dt) {
         _alt_status = is_tof_fresh ? ALTITUDE_STATUS_OK : ALTITUDE_STATUS_STALE;
     }
 
+    // 推定が無効な間は積分しない。
+    //
+    // Why これが要るか: a_up は加速度から重力を引いた残差で、加速度計の
+    //   バイアス・姿勢推定の誤差がそのまま乗る。これを二重積分すると
+    //   誤差は時間の2乗で増える。残差 0.05m/s^2 でも30秒で高度22m・
+    //   速度1.5m/s まで育つ。ToFが復帰した瞬間に巨大な補正が入り、
+    //   D項が上限に張り付いて機体が跳ね上がる。
+    //   補正が入らない間は積分しても意味のある値にならないので止める。
+    const bool is_estimate_live = (_alt_status == ALTITUDE_STATUS_OK);
+    const bool can_predict =
+        is_dt_usable && is_accel_finite && is_estimate_live;
+    if (can_predict) {
+        // 速度を先に進めてから高度に足す(半陰的オイラー)。
+        //
+        // Why not 高度を先に進める(陽的オイラー): 陽的だと1周期ぶん
+        //   古い速度で高度を進めることになり、上下に揺れる入力で
+        //   積分が発散する側に誤差が溜まる。半陰的なら誤差が振動して
+        //   打ち消し合う。コストは行の順番だけ。
+        _alt_velocity += a_up * dt;
+        _alt_height += _alt_velocity * dt;
+    }
+
+    // --- 補正: ToFが新しい値を持っていれば取り込む ------------------
     // --- 制御 ------------------------------------------------------
     //
     // 推定が生きていないときは高度制御を諦める。

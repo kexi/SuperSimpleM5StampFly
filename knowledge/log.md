@@ -1,5 +1,9 @@
 # Directory Update Log
 
+## 2026-09-07
+
+* **Creation**: [実機で飛ばす前の検証手順](preflight-checklist.md) を追加。
+
 ## 2026-09-06
 
 * **Creation**: [機体の軸・ミキサー配分・ToF ピン](stampfly-axes-and-mixer.md) を追加。設計で「記憶ベース・未確認」としていた ToF ピンが一次資料で裏付けられた。

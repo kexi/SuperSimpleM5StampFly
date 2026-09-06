@@ -308,8 +308,22 @@ static void _ble_event_callback(BLEEventParam_t* param) {
         case BLE_EVENT_RECEIVED:
             memcpy((void*)&commdata, &param->data, sizeof(CommData_t));
             is_commdata_received = true;
-            // 「新しい受信が来た」ことを安全装置に伝える。中身は見ない。
-            Safety_notifyCommRx();
+            // 通し番号が進んだときだけ「生きている」とみなす。
+            //
+            // Why not 受信しただけで生存とみなす: BLEのリンクが生きていても、
+            //   送信側のループが固まれば同じ値が届き続ける。受信の有無では
+            //   送信側の停止を検出できない。通し番号が進むことを条件にする。
+            {
+                static uint8_t last_seq        = 0;
+                static bool    has_seen_packet = false;
+                const bool     is_fresh =
+                    !has_seen_packet || (commdata.seq != last_seq);
+                if (is_fresh) {
+                    last_seq        = commdata.seq;
+                    has_seen_packet = true;
+                    Safety_notifyCommRx();
+                }
+            }
             break;
     }
 }
@@ -478,9 +492,22 @@ static void _Control_updateArming(float dt) {
     // 離した瞬間に 0 に戻すので、断続的に押しても溜まらない。
     const bool is_arm_requested =
         (button & CTRL_BUTTON_TRIG_L) && (button & CTRL_BUTTON_TRIG_R);
+
+    // トリガを一度完全に離すまで、次のアーム試行を受け付けない。
+    //
+    // Why これが要るか: 握ったままにしていると、条件が揃った瞬間に
+    //   アームが成立してしまう。特に危ないのが失陥の直後で、機体が
+    //   落ちて水平に落ち着いた瞬間にプロペラが回り出す。拾おうと手を
+    //   伸ばしたところに回転が始まることになる。
+    //   アームは常に「離す→握る」という人の明示的な操作から始める。
+    static bool is_arm_latched = false;
     if (!is_arm_requested) {
         arm_hold_seconds = 0.0f;
+        is_arm_latched   = false;  // 離したので次の握りを受け付ける
         return;
+    }
+    if (is_arm_latched) {
+        return;  // 握りっぱなし。一度離すまで何もしない
     }
 
     arm_hold_seconds += dt;
@@ -504,12 +531,17 @@ static void _Control_updateArming(float dt) {
     // ここまで来たら安全装置の全条件を確認してもらう。
     // スロットル最小・ほぼ水平・IMU正常・BLE接続中 は safety.h が見る。
     //
-    // 通らなかった場合は arm_hold_seconds を戻さない。トリガを握ったまま
-    // スロットルを下げれば、条件が揃った次の周期でアームできる。
+    // 通らなかったらラッチを立てて、一度離すまで再試行させない。
+    // 握ったまま待たせると、条件が揃った瞬間に人の操作なしでアームする。
     const bool is_armed = Safety_requestArm();
     if (!is_armed) {
+        is_arm_latched   = true;
+        arm_hold_seconds = 0.0f;
         return;
     }
+
+    // アームが成立したので、次は一度離してから握り直させる
+    is_arm_latched = true;
 
     // アームの瞬間にI項をゼロに戻す。
     // 地上に置いている間、姿勢誤差(床の傾き・重心ずれ)は消えないまま

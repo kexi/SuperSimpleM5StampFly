@@ -78,6 +78,14 @@ enum SafetyReason {
 static bool         _safety_is_armed = false;
 static SafetyReason _safety_reason   = SAFETY_REASON_NONE;
 
+// 失陥でカットされた後、人が明示的に解除するまでアームを禁じるラッチ。
+//
+// Why これが要るか: 失陥の原因(衝突・IMU異常)が去れば、アーム条件
+//   (水平・スロットル最小・リンク生存)は自然に揃ってしまう。ラッチが無いと、
+//   落ちた機体を拾おうとした瞬間にプロペラが回り出す。
+//   「なぜ落ちたか」を人が確認してから再開させる。
+static bool _safety_is_failsafe_latched = false;
+
 // 最後に「新しいデータが来た」時刻[us]。Safety_update() で経過を見る。
 //
 // Why not 経過時間をfloatで積算する: 400Hz で dt を足し続けると
@@ -109,12 +117,13 @@ static int64_t _Safety_nowUs() {
 //   いるので実害は出にくいが、「見えている状態が実際と違う」ことを
 //   作らない。
 void Safety_init() {
-    _safety_is_armed     = false;
-    _safety_reason       = SAFETY_REASON_NONE;
-    _safety_last_comm_us = 0;
-    _safety_last_imu_us  = 0;
-    _safety_throttle     = 0.0f;
-    _safety_is_connected = false;
+    _safety_is_armed            = false;
+    _safety_reason              = SAFETY_REASON_NONE;
+    _safety_is_failsafe_latched = false;
+    _safety_last_comm_us        = 0;
+    _safety_last_imu_us         = 0;
+    _safety_throttle            = 0.0f;
+    _safety_is_connected        = false;
 }
 
 // 通信を受信したことを通知する
@@ -149,6 +158,18 @@ bool Safety_isArmed() { return _safety_is_armed; }
 // 直近の失陥理由。LED やシリアルへの表示に使う。
 // アームに成功すると SAFETY_REASON_NONE に戻る。
 SafetyReason Safety_getReason() { return _safety_reason; }
+
+// 失陥のラッチが掛かっているか
+bool Safety_isFailsafeLatched() { return _safety_is_failsafe_latched; }
+
+// 失陥のラッチを解除する
+//
+// **なぜ落ちたかを人が確認してから呼ぶ。** 呼ぶまでアームできない。
+// 自動で呼んではいけない(条件が自然に揃うだけで回り始めてしまう)。
+void Safety_clearFailsafe() {
+    _safety_is_failsafe_latched = false;
+    _safety_reason              = SAFETY_REASON_NONE;
+}
 
 // 失陥理由を人が読める文字列にする(シリアル出力用)
 const char* Safety_getReasonName(SafetyReason reason) {
@@ -188,6 +209,12 @@ bool Safety_requestArm() {
     // 既にアームしているなら何もしない(理由も消さない)
     if (_safety_is_armed) {
         return true;
+    }
+
+    // 失陥でカットされた後は、明示的に解除するまでアームさせない。
+    // 条件が自然に揃っても回り始めないようにするため。
+    if (_safety_is_failsafe_latched) {
+        return false;
     }
 
     const float   roll  = Attitude_getRoll();
@@ -269,6 +296,8 @@ void Safety_update(float dt) {
     if (is_link_lost) {
         _safety_is_armed = false;
         _safety_reason   = SAFETY_REASON_LINK_LOST;
+        // 人が明示的に解除するまで再アームを禁じる
+        _safety_is_failsafe_latched = true;
         return;
     }
 
@@ -280,6 +309,8 @@ void Safety_update(float dt) {
     if (is_imu_stale) {
         _safety_is_armed = false;
         _safety_reason   = SAFETY_REASON_IMU_STALE;
+        // 人が明示的に解除するまで再アームを禁じる
+        _safety_is_failsafe_latched = true;
         return;
     }
 
@@ -293,6 +324,8 @@ void Safety_update(float dt) {
     if (is_tilt_exceeded) {
         _safety_is_armed = false;
         _safety_reason   = SAFETY_REASON_TILT_EXCEEDED;
+        // 人が明示的に解除するまで再アームを禁じる
+        _safety_is_failsafe_latched = true;
         return;
     }
 }

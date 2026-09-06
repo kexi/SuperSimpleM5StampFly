@@ -513,6 +513,16 @@ static void _Position_degrade() {
     Pid_reset(&_pos_vel_pid_y);
     Pid_reset(&_pos_pos_pid_x);
     Pid_reset(&_pos_pos_pid_y);
+
+    // 位置も原点に戻す。
+    //
+    // Why not 凍結したまま残す: 観測が途切れている間に機体は流されるが、
+    //   凍結した _pos_x は流される前の値のまま。復帰した瞬間に
+    //   「元の位置まで戻れ」という大きな誤差が一気に効いて、機体が急に走る。
+    //   原点を復帰したその場に引き直す方が、挙動が予測できる。
+    //   位置ホールドの基準が変わるが、観測が無い間の位置は元々信用できない。
+    _pos_x = 0.0f;
+    _pos_y = 0.0f;
 }
 
 // 速度推定と位置制御の更新
@@ -532,13 +542,36 @@ static void _Position_degrade() {
 void Position_update(float dt) {
     // モーションの鮮度を先に更新する。
     // 判定より前に書かないと、今回のフレームの報告が判定に入らない。
-    if (Flow_hasMoved()) {
+    const bool has_measurement = Flow_hasMoved();
+    if (has_measurement) {
         _pos_last_motion_us = _Position_nowUs();
     }
 
     const bool is_flow_usable = _Position_isFlowUsable(dt);
     if (!is_flow_usable) {
         _Position_degrade();
+        return;
+    }
+
+    // 観測が無いフレームは、速度・位置を前回値のまま凍結して抜ける。
+    //
+    // Why これが要るか: ドライバはモーションビットが立たないとき Δ に 0 を
+    //   代入する。この 0 を「観測された流れ」として扱うと、回転成分の除去
+    //   (引き算)だけが残り
+    //     flow_trans_x = 0 - gyro_y = -gyro_y
+    //   という**存在しない速度が生成される**。静止していても角速度に比例した
+    //   偽の速度が出て、それが目標角として姿勢ループへ返る。ピッチレートが
+    //   正のとき機首下げ指令が返る、符号の決まった帰還が閉じるので、
+    //   ゲイン次第で首振り発振か一方向へのドリフトになる。
+    //   このファイルが「その場で傾けるだけなら速度≈0」を目指しているのと
+    //   正反対の挙動なので、観測が無いフレームでは引き算自体を走らせない。
+    //
+    // Why not 速度を0にする: 0 も「静止している」という観測になってしまう。
+    //   本当に静止しているのか、単に報告が無いだけなのかは区別できない。
+    //   前回値のまま置く方が、短い空白では実態に近い。
+    //   空白が POSITION_FLOW_STALL_TIMEOUT_US を超えれば
+    //   _Position_isFlowUsable() が false になり、上で降格される。
+    if (!has_measurement) {
         return;
     }
 
