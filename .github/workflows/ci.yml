@@ -49,7 +49,11 @@ jobs:
       - name: Lint GitHub Actions
         run: nix develop --command actionlint
 
+      # pinact は SHA の検証に GitHub API を使う。未認証だと 60 req/h しかなく
+      # レート制限で落ちるため、ワークフローのトークンを渡す。
       - name: Check actions are SHA-pinned
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command pinact run --check
 
   build:
