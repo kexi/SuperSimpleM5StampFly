@@ -136,6 +136,13 @@ void loop() {
     commData.y2     = y2;
     commData.button = button;
 
+    // 通し番号を毎フレーム進める。
+    // 受信側はこれが止まったことで「送信側が固まった」と判断する。
+    // 255の次は0に戻るが、受信側は「前回と違うか」しか見ないので問題ない。
+    static uint8_t comm_seq = 0;
+    commData.seq            = comm_seq;
+    comm_seq++;
+
     // BLEの更新
     BLE_update(&commData);  // テストで送信
 
