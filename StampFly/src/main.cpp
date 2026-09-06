@@ -1,23 +1,22 @@
 // はじめの二十三歩
-// オプティカルフローセンサ(PMW3901)の移動量を読んでみる
+// SPIバスを共有ドライバに分けて、IMU(BMI270)とオプティカルフローセンサ
+// (PMW3901)の両方と通信できることを確認する
 //
-// 机の上で機体を滑らせて、どちらに動かすとどちらの符号になるかを確認する。
-// ここで確認した軸の向きが、後で速度推定を作るときの前提になる。
+// 2つのセンサーは同じSPIバスにぶら下がっていてCSピンだけで区別する。
+// 片方を読んだ後にもう片方が化けないことが、ここでの確認事項。
 
 #include <Arduino.h>
 
 // ../Common/Driver/include/...
 #include "driver_flow.h"   // オプティカルフローセンサドライバ
+#include "driver_imu.h"    // IMUドライバ
 #include "driver_led.h"    // LEDドライバ
 #include "driver_sound.h"  // サウンドドライバ
 #include "driver_timer.h"  // Timerドライバ
 
 // センサーと通信できたか
+static bool is_imu_ready  = false;
 static bool is_flow_ready = false;
-
-// 移動量の累積(どれだけ動いたかを目で追うため)
-static int32_t total_x = 0;
-static int32_t total_y = 0;
 
 void setup() {
     USBSerial.begin(115200);
@@ -28,50 +27,39 @@ void setup() {
     Sound_init();       // サウンドの初期化
     Timer_init(10000);  // タイマーの初期化(10000us = 10ms)
 
-    // オプティカルフローセンサの初期化
+    // 2つのセンサーの初期化(SPIバスは共有される)
+    is_imu_ready  = Imu_init();
     is_flow_ready = Flow_init();
 
-    if (is_flow_ready) {
-        USBSerial.println("PMW3901 OK");
-        USBSerial.println("机の上で機体を滑らせてみてください");
-        USBSerial.println("dx dy squal total_x total_y");
+    USBSerial.printf("BMI270  Chip ID    : 0x%02X (expected 0x24) %s\n",
+                     Imu_getChipID(), is_imu_ready ? "OK" : "NG");
+    USBSerial.printf("PMW3901 Product ID : 0x%02X (expected 0x49) %s\n",
+                     Flow_getProductID(), is_flow_ready ? "OK" : "NG");
+
+    // 交互に読んで、お互いの通信が干渉していないことを確かめる。
+    // CSの扱いを間違えていると、ここで値が化ける。
+    USBSerial.println("--- 交互に読み直して確認 ---");
+    for (int i = 0; i < 3; i++) {
+        USBSerial.printf("%d: BMI270 0x%02X / PMW3901 0x%02X\n", i,
+                         Imu_getChipID(), Flow_getProductID());
+    }
+
+    if (is_imu_ready && is_flow_ready) {
         Sound_play(SOUND_PRESET_BOOT);
-    } else {
-        USBSerial.printf("PMW3901 NG (ID:0x%02X INV:0x%02X)\n",
-                         Flow_getProductID(), Flow_getInverseProductID());
     }
 }
 
 void loop() {
     Timer_sync();  // フレーム同期
 
-    if (is_flow_ready) {
-        Flow_update();  // 移動量の読み出し
+    const bool is_blink_on = (Timer_getFrameCount() % 100) < 50;
 
-        const int16_t dx    = Flow_getDeltaX();
-        const int16_t dy    = Flow_getDeltaY();
-        const uint8_t squal = Flow_getSqual();
-
-        total_x += dx;
-        total_y += dy;
-
-        // 動いたときだけ出す。静止中に0が流れ続けると読みにくいため。
-        if (Flow_hasMoved()) {
-            USBSerial.printf("%5d %5d %4d %8ld %8ld\n", dx, dy, squal, total_x,
-                             total_y);
-        }
-
-        // 検出品質が低いと速度推定に使えない。
-        // 品質が出ていれば緑、低ければ黄色で知らせる。
-        const bool is_good_surface = squal >= 32;
-        if (is_good_surface) {
-            LED_setColor(0, 0, 100, 0);
-        } else {
-            LED_setColor(0, 100, 60, 0);
-        }
+    // 両方OKなら緑、片方だけなら黄色、どちらもダメなら赤で点滅させる
+    if (is_imu_ready && is_flow_ready) {
+        LED_setColor(0, 0, 100, 0);
+    } else if (is_imu_ready || is_flow_ready) {
+        LED_setColor(0, is_blink_on ? 100 : 0, is_blink_on ? 60 : 0, 0);
     } else {
-        // 通信できていなければ赤で点滅させる
-        const bool is_blink_on = (Timer_getFrameCount() % 100) < 50;
         LED_setColor(0, is_blink_on ? 100 : 0, 0, 0);
     }
 

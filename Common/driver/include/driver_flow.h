@@ -6,13 +6,10 @@
 // Copyright (c) 2017 Bitcraze AB) から取得した。
 // https://github.com/bitcraze/Bitcraze_PMW3901
 //
-// StampFlyでは PMW3901 と IMU(BMI270) が同じSPIバスにぶら下がっていて、
-// CSピンだけで区別する。そのため通信前に IMU 側のCSをHIGH(非選択)に
-// 固定しておかないと、両方が同時に応答してデータが壊れる。
+// PMW3901 と IMU(BMI270) は同じSPIバスにぶら下がっていて、CSピンだけで
+// 区別する。バスの所有と両CSの初期化は driver_spi.h が持つ。
 
-#include <SPI.h>
-
-#include "hardware_config.h"
+#include "driver_spi.h"
 
 // レジスタ ------------------------------------
 #define FLOW_REG_PRODUCT_ID      0x00  // 製品ID
@@ -40,8 +37,6 @@
 // Flow_init()が初期値を捨てるために呼ぶので、先に宣言しておく
 void Flow_update();
 
-static SPIClass* _flow_spi = NULL;
-
 // 最後に読み取った値
 static int16_t _flow_delta_x = 0;
 static int16_t _flow_delta_y = 0;
@@ -50,7 +45,7 @@ static bool    _flow_moved   = false;
 
 // SPIトランザクションの開始(このセンサーを選択する)
 static void _Flow_select() {
-    _flow_spi->beginTransaction(
+    SPI_get()->beginTransaction(
         SPISettings(FLOW_SPI_CLOCK, MSBFIRST, SPI_MODE3));
     digitalWrite(PIN_FLOW_CS, LOW);
     delayMicroseconds(50);  // CS確定待ち
@@ -60,14 +55,14 @@ static void _Flow_select() {
 static void _Flow_deselect() {
     delayMicroseconds(50);  // 転送完了待ち
     digitalWrite(PIN_FLOW_CS, HIGH);
-    _flow_spi->endTransaction();
+    SPI_get()->endTransaction();
 }
 
 // レジスタに1バイト書き込む
 static void _Flow_writeRegister(uint8_t reg, uint8_t value) {
     _Flow_select();
-    _flow_spi->transfer(reg | 0x80);  // 最上位ビットを立てると書き込み
-    _flow_spi->transfer(value);
+    SPI_get()->transfer(reg | 0x80);  // 最上位ビットを立てると書き込み
+    SPI_get()->transfer(value);
     _Flow_deselect();
     delayMicroseconds(200);  // 書き込み後の必要待ち時間
 }
@@ -75,9 +70,9 @@ static void _Flow_writeRegister(uint8_t reg, uint8_t value) {
 // レジスタから1バイト読み込む
 static uint8_t _Flow_readRegister(uint8_t reg) {
     _Flow_select();
-    _flow_spi->transfer(reg & ~0x80);  // 最上位ビットを落とすと読み込み
+    SPI_get()->transfer(reg & ~0x80);  // 最上位ビットを落とすと読み込み
     delayMicroseconds(35);             // アドレス送信からデータ出力までの待ち
-    uint8_t value = _flow_spi->transfer(0x00);
+    uint8_t value = SPI_get()->transfer(0x00);
     _Flow_deselect();
     delayMicroseconds(100);
     return value;
@@ -139,19 +134,8 @@ static void _Flow_writeMagicRegisters() {
 // オプティカルフローセンサの初期化
 // 戻り値: センサーと通信できたら true
 bool Flow_init() {
-    // SPIバスの初期化(HSPIをIMUと共用する)
-    _flow_spi = new SPIClass(HSPI);
-    _flow_spi->begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, PIN_FLOW_CS);
-
-    // IMUのCSをHIGHに固定して、SPIバス上で黙らせておく
-    pinMode(PIN_IMU_CS, OUTPUT);
-    digitalWrite(PIN_IMU_CS, HIGH);
-
-    // フローセンサのCSは非選択(HIGH)から始める
-    pinMode(PIN_FLOW_CS, OUTPUT);
-    digitalWrite(PIN_FLOW_CS, HIGH);
-
-    delay(50);  // 電源安定待ち
+    // SPIバスの初期化(IMUと共用。両方のCSがHIGHで初期化される)
+    SPI_init();
 
     // パワーアップリセット
     _Flow_writeRegister(FLOW_REG_POWER_UP_RESET, 0x5A);

@@ -4,15 +4,20 @@ title: StampFly の SPI 結線と PMW3901 の CS ピン
 description: IMU(BMI270) と オプティカルフローセンサ(PMW3901) が共有する SPI バスの GPIO 割り当て。CS2 は G12。ただし v1.1 では PMW3901 が実装されているか公式ドキュメント内で情報が矛盾しており、実機確認が必要。
 tags: [stampfly, hardware, spi, sensor]
 status: draft
-generated: { by: claude-opus-5/1m, at: 2026-09-06T02:55:00Z }
+generated: { by: claude-opus-5/1m, at: 2026-09-06T03:45:00Z }
 verified:
   - { by: claude-opus-5/1m, at: 2026-09-06T02:30:00Z }
   - { by: claude-opus-5/1m, at: 2026-09-06T02:50:00Z }
   - { by: claude-opus-5/1m, at: 2026-09-06T02:55:00Z }
+  - { by: claude-opus-5/1m, at: 2026-09-06T03:45:00Z }
 sources:
   - id: docs-stampfly-v11
     resource: https://docs.m5stack.com/ja/app/StampFly_v1.1
     title: StampFly v1.1 製品ドキュメント（m5-docs、ピン表あり）
+    author: team:m5stack
+  - id: official-fw-imu
+    resource: https://github.com/m5stack/M5StampFly (src/imu.cpp, lib/bmi270/common.c)
+    title: M5StampFly 公式ファームウェア
     author: team:m5stack
   - id: shop-v11
     resource: https://shop.m5stack.com/products/m5stamp-fly-v1-1-with-m5stamps3a
@@ -67,6 +72,7 @@ IMU の `CS` とは別線であることが確認できる。[^sch-pmw3901]
 [^docs-stampfly-v11]: StampFly v1.1 製品ドキュメント（m5-docs、ピン表あり）
 [^docs-stamp-s3a]: Stamp-S3A モジュール仕様（m5-docs）
 [^shop-v11]: M5Stamp Fly v1.1 商品ページ（M5Stack 公式ストア）
+[^official-fw-imu]: M5StampFly 公式ファームウェア (src/imu.cpp)
 [^sch-stampfly]: Stamp_Fly v1.0 回路図（M5Stack 公式）
 [^sch-pmw3901]: Sch_PMW3901MB_SPI 回路図（M5Stack 公式）
 
@@ -121,6 +127,30 @@ v1.1 でその記載が消えている。
 
 なお **M5Stack 公式ファームウェアは PMW3901 を一切使っていない**ため、
 「公式が使っていないから載っていない」とは言えない（v1.0 でも使っていなかった）。
+
+## 公式ファームウェアが G12 を CS として扱っている (2026-09-06 追記)
+
+**回路図以外のソースから G12 = PMW3901 の CS が裏付けられた。**
+
+公式ファームウェアの `src/imu.cpp` の IMU 初期化冒頭に次がある。[^official-fw-imu]
+
+```cpp
+pinMode(46, OUTPUT);  // CSを設定
+digitalWrite(46, 1);  // CSをHIGH
+pinMode(12, OUTPUT);  // CSを設定
+digitalWrite(12, 1);  // CSをHIGH
+```
+
+公式ファームウェアは **PMW3901 を一切使っていない**のに、G12 を CS として
+HIGH に上げている。**同じ SPI バス上にいるデバイスを黙らせるため**であり、
+これは次の 2 つを意味する:
+
+1. G12 が SPI デバイスの CS であること（回路図の読み取りと一致）
+2. **そのデバイスが物理的に存在すること** — 存在しないデバイスの CS を
+   わざわざ上げる必要はない
+
+ただしこれは v1.0 向けファームウェアなので、**v1.1 の実装有無の直接の証拠に
+はならない**。傍証として扱う。
 
 # バス共有時の注意
 
