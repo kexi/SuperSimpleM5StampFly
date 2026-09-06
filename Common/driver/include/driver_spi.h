@@ -10,6 +10,9 @@
 // Why not 各ドライバがSPIClassを持つ: 同じバスに対してbegin()が
 //   二重に呼ばれる。どちらが先に初期化されるかで挙動が変わるのを避ける。
 
+// SILS のテストではホスト側でスタブを用意するため、実体を読み込まない
+#ifndef SF_HOST_TEST
+
 #include <SPI.h>
 
 #include "hardware_config.h"
@@ -45,3 +48,5 @@ SPIClass* SPI_get() { return _spi; }
 
 // SPIバスの更新(何もしない)
 void SPI_update() {}
+
+#endif  // SF_HOST_TEST

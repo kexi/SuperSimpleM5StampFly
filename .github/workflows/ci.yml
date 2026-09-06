@@ -30,6 +30,19 @@ jobs:
       - name: Lint knowledge (OKF)
         run: nix develop --command bash -c './bin/okf-lint && ./bin/okf-lint-tags'
 
+      # SILS のチップモデルを使ったドライバ検証。
+      # Ecosystem が無い環境ではスキップされる。
+      - name: Check out StampFly Ecosystem (for SILS tests)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: M5Fly-kanazawa/stampfly_ecosystem
+          path: .ecosystem
+
+      - name: Test drivers against SILS chip model
+        env:
+          STAMPFLY_ECOSYSTEM: ${{ github.workspace }}/.ecosystem
+        run: nix develop --command ./bin/test-sils
+
       - name: Scan for secrets
         run: nix develop --command gitleaks detect --no-banner
 

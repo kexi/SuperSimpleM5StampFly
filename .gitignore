@@ -7,3 +7,6 @@ JoyStick/driver
 
 # direnv
 .direnv/
+
+# CI が検証用に clone する外部リポジトリ
+.ecosystem/
