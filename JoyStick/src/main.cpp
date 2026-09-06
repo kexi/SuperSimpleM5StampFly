@@ -130,10 +130,10 @@ void loop() {
 
     CommData_t commData;
     memset(&commData, 0, sizeof(commData));
-    commData.x1 = x1;
-    commData.y1 = y1;
-    commData.x2 = x2;
-    commData.y2 = y2;
+    commData.x1     = x1;
+    commData.y1     = y1;
+    commData.x2     = x2;
+    commData.y2     = y2;
     commData.button = button;
 
     // BLEの更新
