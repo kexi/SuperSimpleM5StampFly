@@ -22,6 +22,8 @@ okf_version: "0.2"
 
 * [室内ポジションホールドまでの設計（はじめの二十三〜三十四歩）](position-hold-design.md) - 姿勢制御からポジションホールドまでを12段階に分ける設計。推定は全て相補フィルタ、単一ループ400Hz、外側は間引き。二十八歩の手動ホバリングまではOptical Flowに依存しない。
 
+* [機体の軸・ミキサー配分・ToF ピン](stampfly-axes-and-mixer.md) - IMU チップ軸から機体軸(FRD)への変換、X 配置クアッドのミキサー式とモーター回転方向、下向き/前向き ToF の XSHUT ピン。すべて参照実装の実証済み値。
+
 ## 実機作業
 
 * [書き込み前に必ず対象デバイスを同定する](flashing-device-identification.md) - ESP32-S3 は StampFly も CoreS3(Stack-chan) も同じ VID:PID を返すため、pio device list だけでは区別できない。同定せずに書き込んで別デバイスを上書きした事故の記録。

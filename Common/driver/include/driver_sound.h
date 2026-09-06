@@ -1,9 +1,13 @@
 #pragma once
 // サウンドドライバ
 
-#define PWM_CH   4     // PWMチャンネル (0-3 は使用中)
-#define PWM_FREQ 4000  // 4kHz
-#define PWM_RESO 8     // 8bit
+// Why not PWM_CH のような短い名前: ヘッダで定義するマクロは他のヘッダの
+//   ローカル変数まで書き換えてしまう。実際 driver_motor.h の
+//   `const int PWM_CH = i;` と衝突し、include 順によってビルドが壊れていた。
+//   共有ヘッダのマクロにはドライバ名を接頭辞として付ける。
+#define SOUND_PWM_CH   4     // PWMチャンネル (0-3 はモーターが使用中)
+#define SOUND_PWM_FREQ 4000  // 4kHz
+#define SOUND_PWM_RESO 8     // 8bit
 
 enum {
     SOUND_PRESET_BOOT,
@@ -28,8 +32,8 @@ static void _Sound_Task(void* param) {
     while (paramsArray->freq >= 0) {
         // 音を出す
         // PWMで音を出す
-        ledcWriteTone(PWM_CH, paramsArray->freq);
-        ledcWrite(PWM_CH, 127);
+        ledcWriteTone(SOUND_PWM_CH, paramsArray->freq);
+        ledcWrite(SOUND_PWM_CH, 127);
 
         // 指定時間待つ
         vTaskDelay(paramsArray->duration / portTICK_PERIOD_MS);
@@ -37,7 +41,7 @@ static void _Sound_Task(void* param) {
         paramsArray++;
     }
     // 音を停止する
-    ledcWriteTone(PWM_CH, 0);
+    ledcWriteTone(SOUND_PWM_CH, 0);
 
     // タスク終了後、タスクハンドルをリセット
     _soundTaskHandle = NULL;
@@ -57,8 +61,8 @@ static void _create_sound_task(SoundParams_t* paramsArray) {
 
 // サウンドの初期化
 void Sound_init() {
-    ledcSetup(PWM_CH, PWM_FREQ, PWM_RESO);
-    ledcAttachPin(PIN_BEEP, PWM_CH);
+    ledcSetup(SOUND_PWM_CH, SOUND_PWM_FREQ, SOUND_PWM_RESO);
+    ledcAttachPin(PIN_BEEP, SOUND_PWM_CH);
 }
 
 // サウンドの更新

@@ -8,11 +8,17 @@
 #include <Arduino.h>
 
 // ../Common/Driver/include/...
-#include "driver_flow.h"   // オプティカルフローセンサドライバ
-#include "driver_imu.h"    // IMUドライバ
+#include "driver_flow.h"  // オプティカルフローセンサドライバ
+#include "driver_imu.h"   // IMUドライバ
+
+// StampFly/include/...
+#include "attitude.h"      // 姿勢推定
 #include "driver_led.h"    // LEDドライバ
 #include "driver_sound.h"  // サウンドドライバ
 #include "driver_timer.h"  // Timerドライバ
+#include "mixer.h"         // モーター配分
+#include "pid.h"           // PID
+#include "safety.h"        // 安全装置
 
 // 制御周期。姿勢制御は速い方が安定するので400Hz(2500us)にする。
 // PIDのゲインは周期に依存するため、ゲインを決める前に確定させておく。
