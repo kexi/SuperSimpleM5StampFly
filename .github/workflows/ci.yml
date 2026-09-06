@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 既定は読み取りのみに絞る
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # gitleaks が履歴を走査できるよう全履歴を取得する
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@08dcb3a5e62fa31e2da3d490afc4176ef55ecd72 # v30
+
+      # 整形・Nix の検証（treefmt を nix flake check 経由で実行）
+      - name: Check formatting
+        run: nix flake check
+
+      - name: Lint shell scripts
+        run: nix develop --command shellcheck bin/*
+
+      - name: Lint knowledge (OKF)
+        run: nix develop --command bash -c './bin/okf-lint && ./bin/okf-lint-tags'
+
+      - name: Scan for secrets
+        run: nix develop --command gitleaks detect --no-banner
+
+      - name: Lint GitHub Actions
+        run: nix develop --command actionlint
+
+      - name: Check actions are SHA-pinned
+        run: nix develop --command pinact run --check
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: cachix/install-nix-action@08dcb3a5e62fa31e2da3d490afc4176ef55ecd72 # v30
+
+      - name: Build StampFly firmware
+        run: nix develop --command bash -c 'cd StampFly && pio run'
+
+      - name: Build JoyStick firmware
+        run: nix develop --command bash -c 'cd JoyStick && pio run'

@@ -1,0 +1,10 @@
+# knowledge/ で使える tag の統制語彙。
+# 説明の無い tag は追加しない（何を指すか曖昧な tag は使う人によって意味が変わる）。
+
+stampfly: M5Stack StampFly 本体（M5StampS3 搭載）に関すること
+hardware: 結線・ピン配置・回路図など物理的な構成
+sensor: センサーデバイスとその読み出し
+spi: SPI バスとその共有・調停
+build: ビルド・ツールチェーン・依存の解決
+toolchain: 開発環境（Nix / PlatformIO / 整形ツール）の構成
+pitfall: 踏むと時間を溶かす落とし穴とその回避
