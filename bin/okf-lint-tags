@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# knowledge/ の tags が knowledge/tags.yml の統制語彙に含まれることを検証する
+# （tag の乱立防止）。これは OKF 仕様の要件ではなくローカル規約。
+
+set -uo pipefail
+
+TAGS_FILE="knowledge/tags.yml"
+
+if [[ ! -f "$TAGS_FILE" ]]; then
+    echo "Skipped: $TAGS_FILE がない"
+    exit 0
+fi
+
+if ! command -v yq >/dev/null 2>&1; then
+    echo "Skipped: yq が入っていない"
+    exit 0
+fi
+
+failed=0
+known=$(yq eval 'keys | .[]' "$TAGS_FILE")
+
+while IFS= read -r file; do
+    case "$(basename "$file")" in
+    index.md | log.md) continue ;;
+    esac
+    while IFS= read -r tag; do
+        [[ -z "$tag" ]] && continue
+        if ! grep -qx "$tag" <<<"$known"; then
+            echo "$file: 未定義の tag \"$tag\"（$TAGS_FILE に説明付きで追加してから使う）"
+            failed=1
+        fi
+    done < <(yq --front-matter=extract eval '.tags[]' "$file" 2>/dev/null)
+done < <(find knowledge -name '*.md')
+
+exit "$failed"

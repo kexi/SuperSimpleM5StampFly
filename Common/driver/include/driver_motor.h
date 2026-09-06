@@ -21,8 +21,8 @@ static const int MOTOR_PINS[] = {
 };
 
 // PWM設定
-const int MOTOR_PWM_FREQ = 150000;  // 150kHz
-const int MOTOR_PWM_BIT_NUM = 8;    // 8bit (PWM Reso)
+const int MOTOR_PWM_FREQ    = 150000;  // 150kHz
+const int MOTOR_PWM_BIT_NUM = 8;       // 8bit (PWM Reso)
 
 // モーターの速度
 static float _motorSpeed[MOTOR_MAX] = {0};
@@ -46,7 +46,7 @@ void Motor_update() {
         const int PWM_CH = i;
 
         // PWM Duty比設定
-        const uint32_t MAX = (1 << MOTOR_PWM_BIT_NUM) - 1;
+        const uint32_t MAX  = (1 << MOTOR_PWM_BIT_NUM) - 1;
         uint32_t       duty = (uint32_t)(MAX * _motorSpeed[i]);
 
         ledcWrite(PWM_CH, duty);

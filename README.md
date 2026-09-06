@@ -5,13 +5,39 @@ M5Stack社が発売した StampFly と AtomJoyStick のファームウェアを�
 ## 方針
 
 - なるべくシンプルにする
-- IMU姿勢制御して飛ばすところまでやる(ToFとかOpiticalFlowとか気圧とかは諦める)
+- まずはIMU姿勢制御して飛ばすところまでやる
+- ToF・OpticalFlow・気圧は余裕があれば手を出す
 - デバイスごとにドライバを分ける
 - StampFly と AtomJoyStick で共通化できる部分は共通化する
 
 ## ToDo
 
 - [ ] アホほどある
+
+## 開発環境
+
+Nix + direnv で環境を用意している。`direnv allow` すると必要なツールが揃う。
+
+```sh
+direnv allow          # 初回のみ
+just install-hooks    # 初回のみ(git hooksの導入)
+just --list           # 使えるコマンド一覧
+just build            # StampFlyのビルド
+just flash-monitor    # 書き込んでシリアルモニタを開く
+```
+
+## StampFly のSPI結線
+
+IMU(BMI270)とオプティカルフローセンサ(PMW3901)は同じSPIバスを共有し、CSピンで区別する。
+値は[公式回路図](https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1069/Stamp_Fly_v1.0.pdf)で確認したもの。
+
+|信号|GPIO|
+|----|----|
+|MOSI|14|
+|MISO|43|
+|SCK|44|
+|CS (BMI270)|46|
+|CS2 (PMW3901)|12|
 
 
 ## 参考資料

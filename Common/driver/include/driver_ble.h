@@ -34,8 +34,8 @@ static BLECallback_t _ble_callback;
 
 static TaskHandle_t _bleTaskHandle = NULL;  // タスクハンドル
 
-static BLEClient*               pClient = NULL;
-static BLEAdvertisedDevice*     targetDevice = NULL;
+static BLEClient*               pClient               = NULL;
+static BLEAdvertisedDevice*     targetDevice          = NULL;
 static BLERemoteCharacteristic* pRemoteCharacteristic = NULL;
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
@@ -113,10 +113,10 @@ bool BLE_isConnected() {
 
 #if BLE_PERIPHERAL
 
-BLEServer*         pServer = NULL;
+BLEServer*         pServer         = NULL;
 BLECharacteristic* pCharacteristic = NULL;
 bool               deviceConnected = false;
-bool               advertising = false;
+bool               advertising     = false;
 
 class BLECallbacks : public BLEServerCallbacks,
                      public BLECharacteristicCallbacks {
@@ -131,7 +131,7 @@ class BLECallbacks : public BLEServerCallbacks,
 
     void onDisconnect(BLEServer* pServer) override {
         deviceConnected = false;
-        advertising = false;
+        advertising     = false;
         {
             BLEEventParam_t param;
             param.event = BLE_EVENT_DISCONNECTED;
@@ -154,7 +154,7 @@ class BLECallbacks : public BLEServerCallbacks,
             {
                 BLEEventParam_t param;
                 param.event = BLE_EVENT_RECEIVED;
-                uint8_t* p = (uint8_t*)value.data();
+                uint8_t* p  = (uint8_t*)value.data();
                 memcpy(&param.data, p, sizeof(CommData_t));
                 _ble_callback(&param);
 

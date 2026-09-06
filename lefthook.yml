@@ -1,0 +1,28 @@
+# hook は素の環境で走るため、devShell のツールが PATH に無い。
+# direnv 経由で環境を読み込んでから実行する（direnv が無い場合は nix develop に落とす）。
+pre-commit:
+  parallel: true
+  commands:
+    # 秘密情報の混入を防ぐ
+    secret-scan:
+      run: ./bin/with-env gitleaks protect --staged --no-banner
+    # C/C++ の整形漏れを防ぐ
+    format:
+      glob: "*.{c,h,cpp,hpp}"
+      run: ./bin/with-env clang-format --dry-run --Werror {staged_files}
+    # Nix の整形漏れを防ぐ
+    format-nix:
+      glob: "*.nix"
+      run: ./bin/with-env nixfmt --check {staged_files}
+    # ナレッジ(OKF)の形式崩れを防ぐ
+    okf-lint:
+      glob: "knowledge/*.md"
+      run: ./bin/with-env bash -c './bin/okf-lint && ./bin/okf-lint-tags'
+    # シェルスクリプトの不具合を防ぐ
+    shellcheck:
+      glob: "bin/*"
+      run: ./bin/with-env shellcheck {staged_files}
+    # justfile の整形漏れを防ぐ
+    format-just:
+      glob: "justfile"
+      run: ./bin/with-env just --fmt --unstable --check
