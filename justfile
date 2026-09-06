@@ -50,6 +50,10 @@ lint-actions:
 pin-check:
     pinact run --check
 
+# SILS のチップモデルを使ってドライバをホスト上で検証する
+test-sils:
+    ./bin/test-sils
+
 # ナレッジ(OKF)の形式を検証する
 okf-lint:
     ./bin/okf-lint

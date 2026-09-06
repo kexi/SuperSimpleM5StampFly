@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# SILS のチップモデルに繋いでドライバをホスト上で検証する。
+# 実機が無くても初期化シーケンスの回帰を回すためのもの。
+#
+# Why not ecosystem を submodule にする: 検証にしか使わない外部リポジトリを
+#   本体の依存にしたくない。無ければスキップする。
+
+set -uo pipefail
+
+ECO="${STAMPFLY_ECOSYSTEM:-$HOME/ghq/github.com/M5Fly-kanazawa/stampfly_ecosystem}"
+DEVICES="$ECO/simulator/sils/devices"
+
+if [[ ! -d "$DEVICES" ]]; then
+    echo "Skipped: StampFly Ecosystem が見つからない ($ECO)"
+    echo "  ghq get https://github.com/M5Fly-kanazawa/stampfly_ecosystem"
+    exit 0
+fi
+
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
+
+c++ -std=gnu++17 -O1 -DSF_HOST_TEST \
+    -I "$DEVICES" \
+    test/sils/flow_driver_test.cpp \
+    "$DEVICES/pmw3901_device.cpp" \
+    -o "$out/flow_driver_test" || exit 1
+
+"$out/flow_driver_test"

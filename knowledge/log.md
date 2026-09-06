@@ -2,6 +2,7 @@
 
 ## 2026-09-06
 
+* **Update**: [PMW3901 の SPI 通信仕様](pmw3901-driver.md) の初期化手順を PixArt 公式版に差し替え。条件分岐とキャリブレーション計算を含むため固定列では代替できない。SILS で検証済みのため status を stable に。
 * **Creation**: [SILS エミュレータ](sils-emulator.md) を追加。「エミュレータは存在しない」という初期の結論は誤りだった。実際にビルドして PMW3901 のプローブが通ることを確認。
 * **Creation**: [StampFly Ecosystem](stampfly-ecosystem-reference.md) を追加。CS=G12 の三度目の裏付けと、速度変換の実測定数。
 * **Update**: [室内ポジションホールドまでの設計](position-hold-design.md) の K_px を訂正。概算値 0.02 rad/px は実測 0.00222 に対し 1 桁違っていた。
