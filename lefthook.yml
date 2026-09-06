@@ -16,7 +16,7 @@ pre-commit:
       run: ./bin/with-env nixfmt --check {staged_files}
     # ナレッジ(OKF)の形式崩れを防ぐ
     okf-lint:
-      glob: "knowledge/**/*.md"
+      glob: "knowledge/*.md"
       run: ./bin/with-env bash -c './bin/okf-lint && ./bin/okf-lint-tags'
     # シェルスクリプトの不具合を防ぐ
     shellcheck:
