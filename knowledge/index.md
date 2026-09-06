@@ -16,6 +16,8 @@ okf_version: "0.2"
 
 * [StampFly Ecosystem — Optical Flow の実測値が得られる参照実装](stampfly-ecosystem-reference.md) - Kouhei Ito 氏(オリジナルファームウェア作者)による教育・研究プラットフォーム。PMW3901 の完全な実装と、速度変換に必要な実測定数が揃っている。
 
+* [SILS エミュレータ — 実機なしで PMW3901 を検証できる](sils-emulator.md) - StampFly Ecosystem の SILS は実ファームウェアを無改変で PC 上で走らせる。PMW3901 のチップモデルがあり、Product ID・回転成分除去・最小高度ゲートまで実機なしで検証できる。
+
 ## 設計
 
 * [室内ポジションホールドまでの設計（はじめの二十三〜三十四歩）](position-hold-design.md) - 姿勢制御からポジションホールドまでを12段階に分ける設計。推定は全て相補フィルタ、単一ループ400Hz、外側は間引き。二十八歩の手動ホバリングまではOptical Flowに依存しない。
