@@ -1,2 +1,9 @@
 
 JoyStick/driver
+
+# PlatformIO
+.pio/
+.platformio/
+
+# direnv
+.direnv/

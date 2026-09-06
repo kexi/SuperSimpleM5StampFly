@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# 与えられたコマンドを devShell の環境で実行する。
+# git hook は素の環境で走り devShell のツールが PATH に無いため、ここで橋渡しする。
+# Why not 各 hook に直接 `nix develop -c` を書く: hook ごとに評価が走って遅い。
+#   direnv が既に環境を用意していればそれを使い回す方が速い。
+
+set -euo pipefail
+
+# 既に devShell の中（direnv 経由を含む）にいればそのまま実行する
+if command -v "$1" >/dev/null 2>&1; then
+    exec "$@"
+fi
+
+if command -v direnv >/dev/null 2>&1; then
+    exec direnv exec . "$@"
+fi
+
+exec nix develop --command "$@"
