@@ -2,6 +2,7 @@
 
 ## 2026-09-06
 
+* **Creation**: [室内ポジションホールドまでの設計](position-hold-design.md) を追加。実装前の設計のため draft。
 * **Update**: [StampFly の SPI 結線](stampfly-spi-pinout.md) を訂正。v1.1 では PMW3901 の実装有無が公式ドキュメント内で矛盾しており未確定。status を draft に戻した。
 * **Creation**: [Atom JoyStick のハードウェア構成とピン配置](atom-joystick-hardware.md) を追加。
 * **Creation**: [書き込み前に必ず対象デバイスを同定する](flashing-device-identification.md) を追加。Stack-chan を誤って上書きした事故の記録。

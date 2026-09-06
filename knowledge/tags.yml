@@ -8,3 +8,5 @@ spi: SPI バスとその共有・調停
 build: ビルド・ツールチェーン・依存の解決
 toolchain: 開発環境（Nix / PlatformIO / 整形ツール）の構成
 pitfall: 踏むと時間を溶かす落とし穴とその回避
+control: 制御・状態推定（PID、フィルタ、センサーフュージョン）
+safety: フェイルセーフと実機を飛ばすときの運用ルール

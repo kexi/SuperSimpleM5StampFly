@@ -11,6 +11,10 @@ okf_version: "0.2"
 
 * [Atom JoyStick のハードウェア構成とピン配置](atom-joystick-hardware.md) - AtomS3 と STM32F030F4P6 の 2 チップ構成。ジョイスティックとボタンは STM32 側に繋がり、AtomS3 からは I2C(0x59) 越しに読む。
 
+## 設計
+
+* [室内ポジションホールドまでの設計（はじめの二十三〜三十四歩）](position-hold-design.md) - 姿勢制御からポジションホールドまでを12段階に分ける設計。推定は全て相補フィルタ、単一ループ400Hz、外側は間引き。二十八歩の手動ホバリングまではOptical Flowに依存しない。
+
 ## 実機作業
 
 * [書き込み前に必ず対象デバイスを同定する](flashing-device-identification.md) - ESP32-S3 は StampFly も CoreS3(Stack-chan) も同じ VID:PID を返すため、pio device list だけでは区別できない。同定せずに書き込んで別デバイスを上書きした事故の記録。
