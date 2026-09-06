@@ -26,6 +26,10 @@ just build            # StampFlyのビルド
 just flash-monitor    # 書き込んでシリアルモニタを開く
 ```
 
+## 参考にした実装
+
+- PMW3901 の性能設定レジスタ列: [Bitcraze_PMW3901](https://github.com/bitcraze/Bitcraze_PMW3901) (MIT License, Copyright (c) 2017 Bitcraze AB)
+
 ## StampFly のSPI結線
 
 IMU(BMI270)とオプティカルフローセンサ(PMW3901)は同じSPIバスを共有し、CSピンで区別する。
