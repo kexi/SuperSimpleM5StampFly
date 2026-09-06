@@ -12,6 +12,10 @@ okf_version: "0.2"
 
 * [Atom JoyStick のハードウェア構成とピン配置](atom-joystick-hardware.md) - AtomS3 と STM32F030F4P6 の 2 チップ構成。ジョイスティックとボタンは STM32 側に繋がり、AtomS3 からは I2C(0x59) 越しに読む。
 
+## 参照実装
+
+* [StampFly Ecosystem — Optical Flow の実測値が得られる参照実装](stampfly-ecosystem-reference.md) - Kouhei Ito 氏(オリジナルファームウェア作者)による教育・研究プラットフォーム。PMW3901 の完全な実装と、速度変換に必要な実測定数が揃っている。
+
 ## 設計
 
 * [室内ポジションホールドまでの設計（はじめの二十三〜三十四歩）](position-hold-design.md) - 姿勢制御からポジションホールドまでを12段階に分ける設計。推定は全て相補フィルタ、単一ループ400Hz、外側は間引き。二十八歩の手動ホバリングまではOptical Flowに依存しない。

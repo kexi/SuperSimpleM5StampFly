@@ -28,7 +28,7 @@
         # "bwrap: setting up uid map: Permission denied" で落ちる。
         # ラッパーを経由しない platformio-core を使う。
         # macOS では両者が同じ derivation なので違いは出ない。
-        platformio = if pkgs.stdenv.isLinux then pkgs.platformio-core else pkgs.platformio;
+        platformio = if pkgs.stdenv.hostPlatform.isLinux then pkgs.platformio-core else pkgs.platformio;
       in
       {
         formatter = treefmtEval.config.build.wrapper;
