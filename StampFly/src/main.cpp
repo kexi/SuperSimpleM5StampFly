@@ -135,6 +135,18 @@
 // スティック中立付近の不感帯。ノイズで目標高度が流れるのを防ぐ。
 #define CTRL_THROTTLE_DEADBAND 0.10f
 
+// ToF が使えないときに、高度を固定値とみなして Flow だけ試すためのモード
+//
+// 0 にすると通常動作(ToFの推定высоを使う)。0以外にすると、その値[m]を
+// 高度として Position に渡す。
+//
+// Why これが要るか: Optical Flow の移動量を速度に直すには高度が要るので、
+//   ToF が動かないと位置制御を一切検証できない。テザーで一定の高さに
+//   保てば、高度を手で与えて Flow の軸・符号・回転成分除去だけを
+//   先に確かめられる。ToF が直ったら 0 に戻す。
+//   詳細は knowledge/preflight-checklist.md「ToF が動かなかった場合」。
+#define CTRL_FIXED_HEIGHT 0.0f  // m (0 = ToFの推定を使う)
+
 // スロットルの上限[duty]。
 // ミキサーの MOTOR_DUTY_MAX (0.8) まで素で出せると、姿勢トルクを足す余地が
 // スティック側で先に食い潰される。操縦入力の段でも上限をかける。
@@ -497,6 +509,24 @@ static void _Control_updateArming(float dt) {
         return;
     }
 
+    // --- 失陥ラッチの解除 -------------------------------------------
+    // 失陥でカットされた後は、明示的に解除するまで再アームできない。
+    //
+    // Why 人の操作を挟むか: 失陥の原因(衝突・IMU異常)が去れば、アーム条件
+    //   は自然に揃ってしまう。ラッチが無いと、落ちた機体を拾おうとした
+    //   瞬間にプロペラが回り出す。**なぜ落ちたかを人が確認してから**
+    //   再開させるための一手間。
+    //
+    // ディスアーム(右スティックボタン)とは別のボタンにする。
+    // 同じにすると、止めようとした操作で解除まで済んでしまう。
+    const bool is_clear_pressed =
+        (button & CTRL_BUTTON_STICK_L) && !(prev_button & CTRL_BUTTON_STICK_L);
+    if (is_clear_pressed && Safety_isFailsafeLatched()) {
+        Safety_clearFailsafe();
+        USBSerial.println("# FAILSAFE CLEARED");
+        return;
+    }
+
     // --- 既にアーム済み ---------------------------------------------
     // カウントを進める意味がないので 0 に戻して抜ける。
     //
@@ -569,6 +599,10 @@ static void _Control_updateArming(float dt) {
     // 固定値にすると、アームした瞬間にそこまで一気に上がろうとする。
     // 以降はスロットルスティックで上下させる(_Control_update 参照)。
     Altitude_setTarget(Altitude_getHeight());
+
+    // 位置の原点を今いる場所に引き直す。
+    // 地上で運んだぶんの積分が残っていると、離陸後に元の場所へ戻ろうとする。
+    Position_notifyArmed();
 
     // アームの瞬間にI項をゼロに戻す。
     // 地上に置いている間、姿勢誤差(床の傾き・重心ずれ)は消えないまま
@@ -931,7 +965,9 @@ void setup() {
     BLE_connect();
 
     USBSerial.println("# 静置してジャイロ較正を待つ(白点滅の間は動かさない)");
-    USBSerial.println("# ARM: 両トリガを1秒 / DISARM: 右スティックのボタン");
+    USBSerial.println(
+        "# ARM: 両トリガを1秒 / DISARM: 右スティックのボタン / "
+        "失陥解除: 左スティックのボタン");
     _Control_printLogHeader();
 
     if (is_imu_ready) {
@@ -984,6 +1020,21 @@ void loop() {
 
         // 高度推定と高度制御。ToFが無効な間はスロットルを出さない。
         Altitude_update(CONTROL_SLOW_DT);
+
+        // 速度推定に高度を渡す。
+        //
+        // Flow の移動量[px]を速度[m/s]に直すには高度が要る(同じ流れでも
+        // 高いほど実距離が大きい)。推定が信用できないときは渡さない。
+        // 渡されない状態が続けば position.h 側が自分で無効化する。
+        const bool is_height_usable =
+            (CTRL_FIXED_HEIGHT > 0.0f) ||
+            (Altitude_getStatus() == ALTITUDE_STATUS_OK);
+        if (is_height_usable) {
+            const float height = (CTRL_FIXED_HEIGHT > 0.0f)
+                                     ? CTRL_FIXED_HEIGHT
+                                     : Altitude_getHeight();
+            Position_setHeight(height);
+        }
 
         // 速度推定と位置制御。出力は目標ロール・ピッチ角。
         Position_update(CONTROL_SLOW_DT);
