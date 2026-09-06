@@ -54,16 +54,20 @@
 // ../Common/driver/include/...
 #include "driver_ble.h"    // BLEドライバ
 #include "driver_flow.h"   // オプティカルフローセンサドライバ
+#include "driver_i2c.h"    // I2Cドライバ
 #include "driver_imu.h"    // IMUドライバ
 #include "driver_led.h"    // LEDドライバ
 #include "driver_motor.h"  // モータードライバ
 #include "driver_sound.h"  // サウンドドライバ
 #include "driver_timer.h"  // Timerドライバ
+#include "driver_tof.h"    // ToF距離センサドライバ
 
 // StampFly/include/...
+#include "altitude.h"  // 高度推定と高度制御
 #include "attitude.h"  // 姿勢推定
 #include "mixer.h"     // モーター配分
 #include "pid.h"       // PID
+#include "position.h"  // 速度推定と位置制御
 #include "safety.h"    // 安全装置
 
 // 制御周期 --------------------------------------
@@ -113,6 +117,23 @@
 // 参照実装の 5.0 rad/s (~286deg/s) はアクロ用で、室内でこの速さで回すと
 // 方向が分からなくなる。1/5 程度に落とす。**要実測**。
 #define CTRL_STICK_MAX_YAW_RATE 1.0f  // rad/s (~57deg/s)
+
+// 位置ホールド中のスティック最大速度指令[m/s]
+//
+// 室内なので速くしない。0.3m/s は歩くより遅く、部屋の端まで数秒かかる。
+// position.h 側でも同じ値でクランプしているが、ここで先に絞っておけば
+// スティックの可動域いっぱいが実際に使える範囲に対応する。
+// **要実測**(遅すぎて操縦感が悪ければ上げる)。
+#define CTRL_STICK_MAX_VELOCITY 0.3f
+
+// 高度ホールド中のスロットルスティックの扱い
+//
+// スティックは「昇降速度」の指示として使う。中立で今の高度を保つ。
+// 0.5m/s は室内で扱いやすい速さ。**要実測**。
+#define CTRL_CLIMB_RATE 0.5f  // m/s
+
+// スティック中立付近の不感帯。ノイズで目標高度が流れるのを防ぐ。
+#define CTRL_THROTTLE_DEADBAND 0.10f
 
 // スロットルの上限[duty]。
 // ミキサーの MOTOR_DUTY_MAX (0.8) まで素で出せると、姿勢トルクを足す余地が
@@ -227,6 +248,7 @@
 // センサーと通信できたか(setup で確定し、以後変わらない)
 static bool is_imu_ready  = false;
 static bool is_flow_ready = false;
+static bool is_tof_ready  = false;
 
 // BLE の接続状態。コールバック(別タスク)が書き、ループが読む。
 static volatile bool is_link_connected = false;
@@ -543,6 +565,11 @@ static void _Control_updateArming(float dt) {
     // アームが成立したので、次は一度離してから握り直させる
     is_arm_latched = true;
 
+    // 目標高度を今いる高さにする。
+    // 固定値にすると、アームした瞬間にそこまで一気に上がろうとする。
+    // 以降はスロットルスティックで上下させる(_Control_update 参照)。
+    Altitude_setTarget(Altitude_getHeight());
+
     // アームの瞬間にI項をゼロに戻す。
     // 地上に置いている間、姿勢誤差(床の傾き・重心ずれ)は消えないまま
     // 積み続ける。溜めたまま回し始めると、その分が一気に出て機体が跳ねる。
@@ -571,8 +598,29 @@ static void _Control_update(float dt) {
     // attitude.h の roll 正(右下がり)と一致するので反転は要らない。
     // pitch は _Control_updateSticks で既に反転済み。ここで二度目の
     // 反転をしてはいけない。
-    target_roll_rad  = stick_roll * CTRL_STICK_MAX_ANGLE_RAD;
-    target_pitch_rad = stick_pitch * CTRL_STICK_MAX_ANGLE_RAD;
+    //
+    // 位置ホールドが効いている間は、スティックではなく位置ループが
+    // 目標角を決める。スティックは Position_setVelTarget() を通じて
+    // 「どっちへどれだけの速さで動きたいか」を指示する形に変わる。
+    //
+    //   位置P → 速度PI → ここの target_roll_rad → 角度P → 角速度PID
+    //
+    // Why not 常に位置ループを通す: Flowが無効(無地の床・暗所・低すぎる高度)
+    //   のときに目標角が0に張り付くと、操縦者が動かそうとしても動かない
+    //   機体になる。位置が信用できないときはスティックで直接角度を決める
+    //   方が、操縦者の意図どおりに動いて安全。
+    const bool is_position_hold = Position_isValid();
+    if (is_position_hold) {
+        // スティックは速度指令。中立(0)ならその場に留まる。
+        Position_setVelTarget(stick_pitch * CTRL_STICK_MAX_VELOCITY,
+                              stick_roll * CTRL_STICK_MAX_VELOCITY);
+
+        target_roll_rad  = Position_getRollTarget();
+        target_pitch_rad = Position_getPitchTarget();
+    } else {
+        target_roll_rad  = stick_roll * CTRL_STICK_MAX_ANGLE_RAD;
+        target_pitch_rad = stick_pitch * CTRL_STICK_MAX_ANGLE_RAD;
+    }
 
     // 角度誤差 → 目標角速度[rad/s]
     const float rate_sp_roll =
@@ -604,7 +652,38 @@ static void _Control_update(float dt) {
     // --- 配分 -------------------------------------------------------
     // Mixer_update() が Motor_setSpeed() まで行う。PWM への書き出しは
     // 呼び出し側の Motor_update()。
-    Mixer_update(stick_throttle, control_out_roll, control_out_pitch,
+    // スロットルスティックで目標高度を上下させる。
+    //
+    // Why not スティックの位置をそのまま目標高度にする: 中立で0.5m、
+    //   上端で1.0m のように割り当てると、スティックを離した瞬間に
+    //   その高度へ飛んでいく。上下の「速度」を指示する形にすれば、
+    //   離したところで止まり、操縦感が普通のドローンと揃う。
+    //
+    // 中立付近には不感帯を置く。スティックのノイズで目標がじわじわ
+    // ずれていくのを防ぐため。
+    const bool is_altitude_live = (Altitude_getStatus() == ALTITUDE_STATUS_OK);
+    if (is_altitude_live) {
+        // stick_throttle は 0.0-1.0。0.5 を中立とみなす。
+        const float climb_input = (stick_throttle - 0.5f) * 2.0f;  // -1.0..+1.0
+        const bool is_in_deadband = fabsf(climb_input) < CTRL_THROTTLE_DEADBAND;
+        if (!is_in_deadband) {
+            const float target =
+                Altitude_getTarget() + climb_input * CTRL_CLIMB_RATE * dt;
+            Altitude_setTarget(target);
+        }
+    }
+
+    // 高度ホールドが効いていればそのスロットルを使う。
+    //
+    // Why not 常に高度ホールドを通す: ToFが無効(レンジ外・センサー異常)の
+    //   ときに高度ホールドのスロットルは0になる。それをそのまま渡すと
+    //   墜落する。推定が生きているときだけ任せ、それ以外は操縦者の手に戻す。
+    //   降格の設計は knowledge/position-hold-design.md の失陥表を参照。
+    const bool  is_altitude_hold = (Altitude_getStatus() == ALTITUDE_STATUS_OK);
+    const float throttle =
+        is_altitude_hold ? Altitude_getThrottle() : stick_throttle;
+
+    Mixer_update(throttle, control_out_roll, control_out_pitch,
                  control_out_yaw);
 }
 
@@ -614,6 +693,15 @@ static void _Control_update(float dt) {
 // 積み上がらない。ログに出る値も 0 になり、「止まっている」ことが読める。
 static void _Control_reset() {
     _Control_resetPids();
+
+    // 高度・位置の推定と積分も戻す。
+    //
+    // Why これが要るか: ディスアーム中も推定は動き続ける。位置の積分は
+    //   機体を手で運んだぶんだけ溜まり、高度のI項も地面に置いた状態で
+    //   「目標高度に届かない」誤差を積む。戻さずにアームすると、
+    //   溜まったぶんを取り戻そうとして機体が走り出す。
+    Altitude_reset();
+    Position_reset();
 
     target_roll_rad   = 0.0f;
     target_pitch_rad  = 0.0f;
@@ -685,6 +773,53 @@ static void _Control_updateLed() {
 }
 
 // ---- CSVログ ---------------------------------------------------------
+
+// --- 机上検証モード（プロペラを外して使う） --------------------
+//
+// knowledge/preflight-checklist.md の段階1を、シリアルを見ながら
+// 判定できるようにする。飛行用のCSVは波形を取るためのもので、
+// 「符号が合っているか」を目で見るには向かない。
+//
+// Why not CSVだけで済ませる: 段階1で確かめたいのは「機首を上げたとき
+//   pitchが正に増えるか」といった向きの一致で、数字の羅列から読むと
+//   間違えやすい。ここを間違えたまま飛ばすと正帰還で裏返るので、
+//   人が誤読しにくい形で出す。
+//
+// アームしていない間だけ出す。飛行中はCSVの邪魔になる。
+static void _Control_printBench() {
+    float accel[3];
+    float gyro[3];
+    Imu_getAccel(accel);
+    Imu_getGyro(gyro);
+
+    const float rad_to_deg = 57.29578f;
+
+    // 傾けた向きを言葉で出す。符号の読み違いを防ぐため。
+    const float roll_deg  = Attitude_getRoll() * rad_to_deg;
+    const float pitch_deg = Attitude_getPitch() * rad_to_deg;
+
+    const char* roll_dir  = (roll_deg > 5.0f)    ? "右下がり"
+                            : (roll_deg < -5.0f) ? "左下がり"
+                                                 : "水平";
+    const char* pitch_dir = (pitch_deg > 5.0f)    ? "機首上げ"
+                            : (pitch_deg < -5.0f) ? "機首下げ"
+                                                  : "水平";
+
+    USBSerial.printf(
+        "[姿勢] roll %+6.1f(%s) pitch %+6.1f(%s) yaw %+6.1f  "
+        "[加速度] %+5.2f %+5.2f %+5.2f  [角速度] %+5.2f %+5.2f %+5.2f\n",
+        roll_deg, roll_dir, pitch_deg, pitch_dir,
+        Attitude_getYaw() * rad_to_deg, accel[0], accel[1], accel[2], gyro[0],
+        gyro[1], gyro[2]);
+
+    USBSerial.printf(
+        "[Flow] dx %+5d dy %+5d squal %3d %s  "
+        "[ToF] %.3fm %s  [負荷] %lldus/%dus\n",
+        Flow_getDeltaX(), Flow_getDeltaY(), Flow_getSqual(),
+        Flow_getSqual() >= 0x19 ? "OK" : "低品質(模様のある床へ)",
+        Tof_getDistance(), Tof_isValid() ? "OK" : "無効", max_elapsed_us,
+        CONTROL_PERIOD_US);
+}
 
 // CSV のヘッダを出す。'#' で始まる行はコメントなので、
 // 取り込む側は '#' 行を捨てれば列名だけ拾える。
@@ -758,8 +893,18 @@ void setup() {
     is_imu_ready  = Imu_init();
     is_flow_ready = Flow_init();
 
+    // I2Cは複数のセンサーが共有する。ToFより先に立ち上げる。
+    I2C_init();
+    is_tof_ready = Tof_init();
+
+    // 高度・位置の推定を初期化する。センサーが無くても呼んでよい
+    // (それぞれ内部で無効状態から始まり、値が来るまで制御を出さない)。
+    Altitude_init();
+    Position_init();
+
     // ID 表示は残す。飛ばない・姿勢が出ないときに、
     // 「センサーと喋れていないのか、制御が悪いのか」の切り分けに要る。
+    USBSerial.printf("# VL53L3CX: %s\n", is_tof_ready ? "OK" : "NG");
     USBSerial.printf("# BMI270  : %s (ID 0x%02X)\n", is_imu_ready ? "OK" : "NG",
                      Imu_getChipID());
     USBSerial.printf("# PMW3901 : %s (ID 0x%02X)\n",
@@ -819,22 +964,29 @@ void loop() {
     _Control_updateArming(CONTROL_DT);
 
     // --- 外側ループ(100Hz) ----------------------------------------
-    // フローは読むだけで、まだ制御には使わない(三十二歩で速度推定に入る)。
-    // ここが高度・位置ループの置き場所になる:
-    //   Tof_update(); Altitude_update(CONTROL_SLOW_DT);   // 三十歩
-    //   Position_update(CONTROL_SLOW_DT);                 // 三十四歩
     //
-    // 三十二歩でここに入る回転成分除去の符号を、忘れないうちに書いておく。
-    // PMW3901 は機体が傾いただけでも地面が流れて見えるので、その分を引く:
-    //   Δθx_t = Δθx + gyro_y*dt   (x方向の見かけの流れは +ピッチレート由来)
-    //   Δθy_t = Δθy - gyro_x*dt   (y方向の見かけの流れは -ロールレート由来)
-    // 符号は attitude.h の FRD(x前・y右・z下)と pitch正=機首上げ を前提と
-    // した式で、**未検証**。三十二歩の「その場で傾けるだけなら速度≈0」で
-    // 実測して確定させる。出典: knowledge/position-hold-design.md「速度」
+    // 姿勢(400Hz)より遅くてよい。センサー自体が ToF 30Hz / Flow 100Hz 程度
+    // でしか更新されないので、これより速く回しても同じ値を読むだけになる。
+    //
+    // 順序が重要: Flow と ToF を読む → 高度を推定 → その高度を使って
+    // 速度を推定する。Optical Flow の移動量[px]を速度[m/s]に直すには
+    // 高度が要る(同じ流れでも高いほど実距離が大きい)ので、
+    // 高度が先に確定していないと速度が出ない。
     const bool is_slow_frame =
         (Timer_getFrameCount() % CONTROL_SLOW_DIVIDER) == 0;
-    if (is_flow_ready && is_slow_frame) {
-        Flow_update();
+    if (is_slow_frame) {
+        if (is_flow_ready) {
+            Flow_update();
+        }
+        if (is_tof_ready) {
+            Tof_update();
+        }
+
+        // 高度推定と高度制御。ToFが無効な間はスロットルを出さない。
+        Altitude_update(CONTROL_SLOW_DT);
+
+        // 速度推定と位置制御。出力は目標ロール・ピッチ角。
+        Position_update(CONTROL_SLOW_DT);
     }
 
     // --- 安全装置(400Hz) ------------------------------------------
@@ -870,7 +1022,17 @@ void loop() {
     const bool is_log_frame =
         (Timer_getFrameCount() % CTRL_LOG_DIVIDER) == CTRL_LOG_PHASE;
     if (is_log_frame) {
-        _Control_printLog();
+        // アーム中は飛行ログ(CSV)、ディスアーム中は机上検証の表示。
+        //
+        // Why 分けるか: CSVは波形を取るための形式で、机上で「符号が
+        //   合っているか」を目で確かめるには読みにくい。飛ぶ前の確認と
+        //   飛んでからの記録では、必要な形が違う。
+        if (Safety_isArmed()) {
+            _Control_printLog();
+        } else {
+            _Control_printBench();
+            max_elapsed_us = 0;  // 次の区間の最大値を取り直す
+        }
     }
 
     LED_update();
